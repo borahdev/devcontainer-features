@@ -32,14 +32,16 @@ mkdir -p "$SHARE_DIR" "$LOG_DIR" "$STATE_DIR"
 # (/etc/profile.d, start.sh) or a KEY=VALUE file (/etc/environment), so a
 # malicious or malformed value must be rejected here rather than trusted.
 # ---------------------------------------------------------------------------
+fail() {
+  echo "[skill-observability] ERROR: $*" >&2
+  exit 1
+}
+
 reject_newlines() {
   # $1 = value, $2 = option name. /etc/environment is line-based KEY=VALUE;
   # a newline in the value would let it inject extra "lines" into that file.
   case "$1" in
-    *$'\n'*|*$'\r'*)
-      echo "[skill-observability] ERROR: '$2' must not contain newlines" >&2
-      exit 1
-      ;;
+    *$'\n'*|*$'\r'*) fail "'$2' must not contain newlines" ;;
   esac
 }
 
@@ -47,8 +49,7 @@ if [ -n "$ENDPOINT" ]; then
   reject_newlines "$ENDPOINT" "endpoint"
   case "$ENDPOINT" in
     *[[:space:]\'\"\`\$]*)
-      echo "[skill-observability] ERROR: 'endpoint' contains disallowed characters (whitespace, quotes, backticks, or \$)" >&2
-      exit 1
+      fail "'endpoint' contains disallowed characters (whitespace, quotes, backticks, or \$)"
       ;;
   esac
 fi
@@ -58,17 +59,15 @@ fi
 # must stay a single line in /etc/environment.
 reject_newlines "$ENDPOINTHEADERS" "endpointHeaders"
 
+# Mirrors the "backend" enum in devcontainer-feature.json; re-checked here
+# too since install.sh can be invoked directly, bypassing that schema check.
 case "$BACKEND" in
   otel-tui|otel-desktop-viewer|none) ;;
-  *)
-    echo "[skill-observability] ERROR: invalid 'backend' value '$BACKEND' (expected otel-tui, otel-desktop-viewer, or none)" >&2
-    exit 1
-    ;;
+  *) fail "invalid 'backend' value '$BACKEND' (expected otel-tui, otel-desktop-viewer, or none)" ;;
 esac
 
 if ! [[ "$UIPORT" =~ ^[0-9]{1,5}$ ]]; then
-  echo "[skill-observability] ERROR: invalid 'uiPort' value '$UIPORT' (expected 1-5 digits)" >&2
-  exit 1
+  fail "invalid 'uiPort' value '$UIPORT' (expected 1-5 digits)"
 fi
 
 echo "[skill-observability] backend=$BACKEND endpoint='${ENDPOINT}' uiPort=$UIPORT claudeTelemetry=$CLAUDETELEMETRY claudeTraces=$CLAUDETRACES logPrompts=$LOGPROMPTS endpointHeaders=$([ -n "$ENDPOINTHEADERS" ] && echo '<set>' || echo '<unset>')"
@@ -349,9 +348,21 @@ chmod 0644 "$ENV_FILE"
 # non-login-shell inheritance. Guard against duplicate entries on rebuild.
 # ENDPOINT/ENDPOINTHEADERS were already checked above to reject newlines, so
 # neither value can inject extra lines into this file.
+# One key list drives the dedup below, so it can't drift from the echoes
+# that follow it.
+OTEL_ENV_KEYS=(
+  OTEL_EXPORTER_OTLP_ENDPOINT OTEL_SERVICE_NAME OTEL_RESOURCE_ATTRIBUTES
+  OTEL_EXPORTER_OTLP_HEADERS CLAUDE_CODE_ENABLE_TELEMETRY OTEL_METRICS_EXPORTER
+  OTEL_LOGS_EXPORTER OTEL_EXPORTER_OTLP_PROTOCOL CLAUDE_CODE_ENHANCED_TELEMETRY_BETA
+  OTEL_TRACES_EXPORTER OTEL_LOG_USER_PROMPTS OTEL_LOG_TOOL_DETAILS
+)
 {
+  dedup_expr=""
+  for key in "${OTEL_ENV_KEYS[@]}"; do
+    dedup_expr="${dedup_expr}/^${key}=/d;"
+  done
   grep -q '^OTEL_EXPORTER_OTLP_ENDPOINT=' /etc/environment 2>/dev/null && \
-    sed -i '/^OTEL_EXPORTER_OTLP_ENDPOINT=/d;/^OTEL_SERVICE_NAME=/d;/^OTEL_RESOURCE_ATTRIBUTES=/d;/^OTEL_EXPORTER_OTLP_HEADERS=/d;/^CLAUDE_CODE_ENABLE_TELEMETRY=/d;/^OTEL_METRICS_EXPORTER=/d;/^OTEL_LOGS_EXPORTER=/d;/^OTEL_EXPORTER_OTLP_PROTOCOL=/d;/^CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=/d;/^OTEL_TRACES_EXPORTER=/d;/^OTEL_LOG_USER_PROMPTS=/d;/^OTEL_LOG_TOOL_DETAILS=/d' /etc/environment
+    sed -i "$dedup_expr" /etc/environment
   true
 }
 {
