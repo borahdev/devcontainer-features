@@ -1,0 +1,46 @@
+{
+  "default_otel_tui": {
+    "image": "mcr.microsoft.com/devcontainers/base:bookworm",
+    "features": {
+      "skill-observability": {}
+    }
+  },
+  "desktop_viewer_backend": {
+    "image": "mcr.microsoft.com/devcontainers/base:noble",
+    "features": {
+      "skill-observability": {
+        "backend": "otel-desktop-viewer",
+        "uiPort": "4319"
+      }
+    }
+  },
+  "remote_endpoint_no_local_backend": {
+    "image": "mcr.microsoft.com/devcontainers/base:bookworm",
+    "features": {
+      "skill-observability": {
+        "backend": "none",
+        "endpoint": "https://otlp.example.com",
+        "endpointHeaders": "x-api-key=dummy-test-key",
+        "installPlugin": false
+      }
+    }
+  },
+  "claude_traces_and_prompt_logging_enabled": {
+    "image": "mcr.microsoft.com/devcontainers/base:bookworm",
+    "features": {
+      "skill-observability": {
+        "claudeTraces": true,
+        "logPrompts": true
+      }
+    }
+  },
+  "with_claude_code_plugin_install_attempt": {
+    "image": "mcr.microsoft.com/devcontainers/base:bookworm",
+    "features": {
+      "ghcr.io/anthropics/devcontainer-features/claude-code:1": {},
+      "skill-observability": {
+        "installPlugin": true
+      }
+    }
+  }
+}

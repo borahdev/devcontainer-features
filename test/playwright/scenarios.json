@@ -1,0 +1,18 @@
+{
+  "chromium": {
+    "image": "mcr.microsoft.com/devcontainers/javascript-node:24",
+    "features": {
+      "playwright": {
+        "browser": "chromium"
+      }
+    }
+  },
+  "no_cli": {
+    "image": "mcr.microsoft.com/devcontainers/javascript-node:24",
+    "features": {
+      "playwright": {
+        "cli": false
+      }
+    }
+  }
+}

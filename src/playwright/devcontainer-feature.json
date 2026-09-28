@@ -1,0 +1,36 @@
+{
+  "id": "playwright",
+  "version": "1.0.0",
+  "name": "Playwright",
+  "description": "Playwright CLI and a matching browser for agent-driven and project test-suite browser checks.",
+  "documentationURL": "https://github.com/borahdev/devcontainer-features/tree/main/src/playwright",
+  "installsAfter": [
+    "ghcr.io/devcontainers/features/node"
+  ],
+  "containerEnv": {
+    "PLAYWRIGHT_BROWSERS_PATH": "/ms-playwright"
+  },
+  "options": {
+    "browser": {
+      "type": "string",
+      "proposals": [
+        "auto",
+        "chrome",
+        "chromium",
+        "none"
+      ],
+      "default": "auto",
+      "description": "Browser to install: 'auto' picks chrome on x64 and chromium on arm64 (Chrome has no arm64 Linux build). 'none' skips browser install."
+    },
+    "cli": {
+      "type": "boolean",
+      "default": true,
+      "description": "Install @playwright/cli globally so agents can run playwright-cli."
+    },
+    "cliVersion": {
+      "type": "string",
+      "default": "latest",
+      "description": "Version of @playwright/cli to install."
+    }
+  }
+}

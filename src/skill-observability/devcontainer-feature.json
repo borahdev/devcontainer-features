@@ -1,0 +1,75 @@
+{
+  "id": "skill-observability",
+  "version": "1.0.0",
+  "name": "Skill Observability",
+  "description": "Zero-effort local OpenTelemetry viewing for Claude Code plugin/skill runs and Claude Code's own telemetry. Starts a lightweight in-container OTLP receiver+viewer, wires OTEL_* env vars so both Claude Code and the agent-skills plugin hooks export to it, and can optionally install the agent-skills plugin non-interactively.",
+  "documentationURL": "https://github.com/borahdev/devcontainer-features/tree/main/src/skill-observability",
+  "options": {
+    "backend": {
+      "type": "string",
+      "enum": ["otel-tui", "otel-desktop-viewer", "none"],
+      "default": "otel-tui",
+      "description": "Which local OTLP receiver/viewer to run inside the container. 'otel-tui' is a terminal UI (no forwarded port needed to view it, attach with 'otel-tui-attach'); works on any glibc/Debian/Ubuntu base image. 'otel-desktop-viewer' serves a web UI on uiPort, but its prebuilt Linux binary requires glibc >= 2.38 (e.g. Ubuntu 24.04/'noble', Debian 'trixie'); it will fail to start on glibc 2.36 images such as the common debian:bookworm-based devcontainer base images. 'none' skips installing any local backend (use with 'endpoint' for a remote/cloud backend)."
+    },
+    "endpoint": {
+      "type": "string",
+      "default": "",
+      "description": "Remote OTLP/HTTP endpoint base URL (e.g. https://otlp-gateway.example.com). When set, this takes priority over the local backend: OTEL_EXPORTER_OTLP_ENDPOINT is set to this value and 'backend' is ignored for endpoint purposes (the local backend, if any, still starts and can be pointed at manually). Leave empty to use the local backend on 127.0.0.1."
+    },
+    "endpointHeaders": {
+      "type": "string",
+      "default": "",
+      "description": "Value for OTEL_EXPORTER_OTLP_HEADERS when using a remote endpoint, e.g. 'Authorization=Bearer xxxx,x-honeycomb-team=xxxx'. Prefer passing this via remoteEnv/localEnv in devcontainer.json rather than baking it into the image; this option exists for convenience when the value is not a secret (e.g. a local collector)."
+    },
+    "uiPort": {
+      "type": "string",
+      "default": "4319",
+      "description": "Port for the local backend's web UI (only used by otel-desktop-viewer). The OTLP HTTP receiver itself always listens on 4318."
+    },
+    "installPlugin": {
+      "type": "boolean",
+      "default": true,
+      "description": "Non-interactively add the borahdev/agent-skills marketplace and install the agent-skills plugin (id 'agent-skills' in marketplace 'borahdev') at user scope via the claude CLI, if 'claude' is present on PATH at container-start time."
+    },
+    "claudeTelemetry": {
+      "type": "boolean",
+      "default": true,
+      "description": "Set CLAUDE_CODE_ENABLE_TELEMETRY=1 plus OTEL_METRICS_EXPORTER=otlp and OTEL_LOGS_EXPORTER=otlp so Claude Code's own metrics and events flow to the same backend as the plugin's hook spans."
+    },
+    "claudeTraces": {
+      "type": "boolean",
+      "default": false,
+      "description": "Also enable Claude Code's beta trace export (CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1, OTEL_TRACES_EXPORTER=otlp). Off by default because it is a beta signal separate from the plugin's own hook.* spans."
+    },
+    "logPrompts": {
+      "type": "boolean",
+      "default": false,
+      "description": "Set OTEL_LOG_USER_PROMPTS=1 (and OTEL_LOG_TOOL_DETAILS=1) so Claude Code's own OTel events include prompt text and tool parameters. Off by default for privacy; the plugin's own hook spans never include prompt content regardless of this setting."
+    }
+  },
+  "containerEnv": {
+    "SKILL_OBSERVABILITY_OTLP_HTTP_PORT": "4318",
+    "SKILL_OBSERVABILITY_LOG_DIR": "/var/log/skill-observability"
+  },
+  "mounts": [
+    "source=skill-observability-data-${devcontainerId},target=/var/lib/skill-observability,type=volume"
+  ],
+  "postStartCommand": "/usr/local/share/skill-observability/start.sh",
+  "customizations": {
+    "vscode": {
+      "extensions": [],
+      "settings": {
+        "remote.portsAttributes": {
+          "4319": {
+            "label": "skill-observability: otel-desktop-viewer UI",
+            "onAutoForward": "silent"
+          }
+        }
+      }
+    }
+  },
+  "installsAfter": [
+    "ghcr.io/anthropics/devcontainer-features/claude-code",
+    "ghcr.io/devcontainers/features/node"
+  ]
+}
