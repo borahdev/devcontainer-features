@@ -2,9 +2,8 @@
 # Dev Container Feature: skill-observability
 # Runs at image build time (as root) via the devcontainers CLI.
 # Installs a local OTLP receiver/viewer and wires OTEL_* env vars so that
-# both Claude Code's own telemetry and the agent-skills plugin's hook spans
-# (see src/telemetry/otel.ts in borahdev/agent-skills) land in one place
-# with zero effort from the developer.
+# Claude Code's own telemetry (and any plugin/skill hook spans it or your
+# project emits) lands in one place with zero effort from the developer.
 set -euo pipefail
 
 # --- Feature options are exposed as upper-cased env vars by the devcontainers CLI ---
@@ -12,7 +11,6 @@ BACKEND="${BACKEND:-otel-tui}"
 ENDPOINT="${ENDPOINT:-}"
 ENDPOINTHEADERS="${ENDPOINTHEADERS:-}"
 UIPORT="${UIPORT:-4319}"
-INSTALLPLUGIN="${INSTALLPLUGIN:-true}"
 CLAUDETELEMETRY="${CLAUDETELEMETRY:-true}"
 CLAUDETRACES="${CLAUDETRACES:-false}"
 LOGPROMPTS="${LOGPROMPTS:-false}"
@@ -28,7 +26,51 @@ STATE_DIR=/var/lib/skill-observability
 
 mkdir -p "$SHARE_DIR" "$LOG_DIR" "$STATE_DIR"
 
-echo "[skill-observability] backend=$BACKEND endpoint='${ENDPOINT}' uiPort=$UIPORT installPlugin=$INSTALLPLUGIN claudeTelemetry=$CLAUDETELEMETRY claudeTraces=$CLAUDETRACES logPrompts=$LOGPROMPTS"
+# ---------------------------------------------------------------------------
+# Validate option values before anything is downloaded or written. These are
+# authored in devcontainer.json and end up embedded in shell scripts
+# (/etc/profile.d, start.sh) or a KEY=VALUE file (/etc/environment), so a
+# malicious or malformed value must be rejected here rather than trusted.
+# ---------------------------------------------------------------------------
+fail() {
+  echo "[skill-observability] ERROR: $*" >&2
+  exit 1
+}
+
+reject_newlines() {
+  # $1 = value, $2 = option name. /etc/environment is line-based KEY=VALUE;
+  # a newline in the value would let it inject extra "lines" into that file.
+  case "$1" in
+    *$'\n'*|*$'\r'*) fail "'$2' must not contain newlines" ;;
+  esac
+}
+
+if [ -n "$ENDPOINT" ]; then
+  reject_newlines "$ENDPOINT" "endpoint"
+  case "$ENDPOINT" in
+    *[[:space:]\'\"\`\$]*)
+      fail "'endpoint' contains disallowed characters (whitespace, quotes, backticks, or \$)"
+      ;;
+  esac
+fi
+# endpointHeaders can legitimately contain spaces (e.g. "Authorization=Bearer
+# xxxx"); only newlines are disallowed, since the value is written via
+# printf %q into the profile.d script (safe against quotes/$/backticks) and
+# must stay a single line in /etc/environment.
+reject_newlines "$ENDPOINTHEADERS" "endpointHeaders"
+
+# Mirrors the "backend" enum in devcontainer-feature.json; re-checked here
+# too since install.sh can be invoked directly, bypassing that schema check.
+case "$BACKEND" in
+  otel-tui|otel-desktop-viewer|none) ;;
+  *) fail "invalid 'backend' value '$BACKEND' (expected otel-tui, otel-desktop-viewer, or none)" ;;
+esac
+
+if ! [[ "$UIPORT" =~ ^[0-9]{1,5}$ ]]; then
+  fail "invalid 'uiPort' value '$UIPORT' (expected 1-5 digits)"
+fi
+
+echo "[skill-observability] backend=$BACKEND endpoint='${ENDPOINT}' uiPort=$UIPORT claudeTelemetry=$CLAUDETELEMETRY claudeTraces=$CLAUDETRACES logPrompts=$LOGPROMPTS endpointHeaders=$([ -n "$ENDPOINTHEADERS" ] && echo '<set>' || echo '<unset>')"
 
 # ---------------------------------------------------------------------------
 # 1. Base build tools (curl/tar/ca-certificates are needed to fetch binaries;
@@ -65,47 +107,60 @@ case "$ARCH_RAW" in
 esac
 
 # ---------------------------------------------------------------------------
-# 3. Fetch latest-release binary for the selected backend, matching linux/$GOARCH.
-#    Both tools ship gzipped/tar'd single-binary Go releases on GitHub. We query
-#    the GitHub Releases API and pick the first asset whose name contains
-#    "linux" and the detected arch, falling back gracefully if not found.
+# 3. Fetch a pinned-version release binary for the selected backend, matching
+#    linux/$GOARCH, and verify its sha256 before installing. Versions and
+#    checksums below are pinned deliberately (not "latest"): a moving target
+#    can't be checksummed, and an unverified binary run as root at build time
+#    is a supply-chain risk. Update both the tag and the checksums together
+#    when bumping a version. Checksums come from each release's own
+#    checksums.txt asset; at authoring time they were also cross-checked by
+#    downloading both arches' assets and hashing them independently.
 # ---------------------------------------------------------------------------
+OTEL_TUI_VERSION="v0.7.5"
+declare -A OTEL_TUI_SHA256=(
+  [amd64]="dd10bfa12b6713a2d51d7a094644ff61a2467856fc93d3acecfe741a124ca896"
+  [arm64]="b627a7bbf5d6be7aed1fdd36e6cee935edd590b5be4cb9b124bd0450dd75bb63"
+)
+
+OTEL_DESKTOP_VIEWER_VERSION="v0.5.0"
+declare -A OTEL_DESKTOP_VIEWER_SHA256=(
+  [amd64]="400643cd4e6912b4901a25e51e1ff582815806f419f560e88749e21539314286"
+  [arm64]="74ae54202b595300cc53fcf70c1c7d314ecc4f5f3b80fc0753a817b9b3d93b43"
+)
+
 fetch_release_asset() {
-  # $1 = owner/repo, $2 = output binary path, $3 = binary name inside archive
-  # $4 = required substring for the OS+arch (e.g. "Linux_x86_64" or "linux_amd64"),
-  # $5 = optional substring that disqualifies a match (e.g. "homebrew")
-  local repo="$1" out="$2" bin_name="$3" arch_pattern="$4" exclude_pattern="${5:-}"
-  local api="https://api.github.com/repos/${repo}/releases/latest"
+  # $1 = owner/repo, $2 = release tag (pinned), $3 = exact asset filename,
+  # $4 = expected sha256 for that asset, $5 = output binary path,
+  # $6 = binary name inside the archive (for tar.gz assets)
+  local repo="$1" tag="$2" asset="$3" sha="$4" out="$5" bin_name="$6"
+  local url="https://github.com/${repo}/releases/download/${tag}/${asset}"
   local tmp
   tmp="$(mktemp -d)"
-  if ! curl -fsSL "$api" -o "$tmp/release.json"; then
-    echo "[skill-observability] WARNING: could not reach GitHub API for $repo; skipping backend install" >&2
-    rm -rf "$tmp"
-    return 1
-  fi
-  local url
-  url="$(grep -o '"browser_download_url": *"[^"]*"' "$tmp/release.json" \
-    | sed -E 's/.*"(https[^"]+)"/\1/' \
-    | grep -F "$arch_pattern" \
-    | grep -E '\.(tar\.gz|tgz)$' \
-    | { [ -n "$exclude_pattern" ] && grep -v -F "$exclude_pattern" || cat; } \
-    | head -n1 || true)"
-  if [ -z "$url" ]; then
-    echo "[skill-observability] WARNING: no asset matching '$arch_pattern' (.tar.gz) found for $repo; skipping" >&2
-    rm -rf "$tmp"
-    return 1
-  fi
   echo "[skill-observability] downloading $url"
-  curl -fsSL "$url" -o "$tmp/asset"
-  case "$url" in
+  if ! curl -fsSL "$url" -o "$tmp/$asset"; then
+    echo "[skill-observability] WARNING: download failed for $url; skipping" >&2
+    rm -rf "$tmp"
+    return 1
+  fi
+  if ! (cd "$tmp" && printf '%s  %s\n' "$sha" "$asset" | sha256sum -c - >/dev/null 2>&1); then
+    echo "[skill-observability] WARNING: sha256 mismatch for $asset (expected $sha); refusing to install" >&2
+    rm -rf "$tmp"
+    return 1
+  fi
+  case "$asset" in
     *.tar.gz|*.tgz)
-      tar -xzf "$tmp/asset" -C "$tmp"
+      tar -xzf "$tmp/$asset" -C "$tmp"
       local found
       found="$(find "$tmp" -type f -name "$bin_name" | head -n1)"
-      [ -n "$found" ] && install -m 0755 "$found" "$out"
+      if [ -z "$found" ]; then
+        echo "[skill-observability] WARNING: $bin_name not found inside $asset" >&2
+        rm -rf "$tmp"
+        return 1
+      fi
+      install -m 0755 "$found" "$out"
       ;;
     *)
-      install -m 0755 "$tmp/asset" "$out"
+      install -m 0755 "$tmp/$asset" "$out"
       ;;
   esac
   rm -rf "$tmp"
@@ -116,7 +171,8 @@ if [ -n "$GOARCH" ] && [ "$BACKEND" != "none" ]; then
   case "$BACKEND" in
     otel-tui)
       # goreleaser asset naming: otel-tui_Linux_x86_64.tar.gz / otel-tui_Linux_arm64.tar.gz
-      fetch_release_asset "ymtdzzz/otel-tui" "$BIN_DIR/otel-tui" "otel-tui" "Linux_${UNAME_ARCH}" \
+      fetch_release_asset "ymtdzzz/otel-tui" "$OTEL_TUI_VERSION" "otel-tui_Linux_${UNAME_ARCH}.tar.gz" \
+        "${OTEL_TUI_SHA256[$GOARCH]}" "$BIN_DIR/otel-tui" "otel-tui" \
         || echo "[skill-observability] otel-tui install failed; local backend will be unavailable" >&2
       ;;
     otel-desktop-viewer)
@@ -132,8 +188,10 @@ if [ -n "$GOARCH" ] && [ "$BACKEND" != "none" ]; then
         echo "[skill-observability] WARNING: use a newer base image (e.g. ubuntu:24.04 / debian:trixie) or set backend=otel-tui. Skipping local backend install." >&2
       else
         # goreleaser asset naming: otel-desktop-viewer_linux_amd64.tar.gz (also
-        # ships _homebrew_linux_amd64.tar.gz, .deb, .rpm variants we must not match)
-        fetch_release_asset "CtrlSpice/otel-desktop-viewer" "$BIN_DIR/otel-desktop-viewer" "otel-desktop-viewer" "linux_${GOARCH}" "homebrew" \
+        # ships _homebrew_linux_amd64.tar.gz, .deb, .rpm variants; the exact
+        # filename below avoids matching those)
+        fetch_release_asset "CtrlSpice/otel-desktop-viewer" "$OTEL_DESKTOP_VIEWER_VERSION" "otel-desktop-viewer_linux_${GOARCH}.tar.gz" \
+          "${OTEL_DESKTOP_VIEWER_SHA256[$GOARCH]}" "$BIN_DIR/otel-desktop-viewer" "otel-desktop-viewer" \
           || echo "[skill-observability] otel-desktop-viewer install failed; local backend will be unavailable" >&2
       fi
       ;;
@@ -147,13 +205,12 @@ fi
 # ---------------------------------------------------------------------------
 cat > "$SHARE_DIR/start.sh" <<'STARTSCRIPT'
 #!/usr/bin/env bash
-# Idempotently (re)starts the local OTLP backend and, if requested, installs
-# the agent-skills plugin. Safe to run on every container start.
+# Idempotently (re)starts the local OTLP backend. Safe to run on every
+# container start.
 set -uo pipefail
 
 BACKEND="__BACKEND__"
 UIPORT="__UIPORT__"
-INSTALLPLUGIN="__INSTALLPLUGIN__"
 LOG_DIR="/var/log/skill-observability"
 mkdir -p "$LOG_DIR" 2>/dev/null || true
 # The remote user's UID can be remapped after build (updateRemoteUserUID), so
@@ -188,13 +245,16 @@ start_otel_desktop_viewer() {
   fi
   log "starting otel-desktop-viewer (UI on :$UIPORT, OTLP HTTP on :4318)"
   mkdir -p /var/lib/skill-observability 2>/dev/null || true
-  # --host 0.0.0.0 so the port is reachable for VS Code port-forwarding (its
-  # default is localhost-only); --open-browser=false because there is no
-  # browser inside the container; --db persists traces/logs/metrics across
-  # restarts in the feature's named volume instead of the default in-memory
-  # store.
+  # --host 127.0.0.1 (the binary's own default is "localhost"; we were
+  # overriding it to 0.0.0.0 unnecessarily): VS Code's port-forwarding runs a
+  # helper process inside the container's own network namespace and relays
+  # from there, so a loopback-only listener is already reachable for
+  # forwarding - no need to expose it on all interfaces. --open-browser=false
+  # because there is no browser inside the container; --db persists
+  # traces/logs/metrics across restarts in the feature's named volume instead
+  # of the default in-memory store.
   nohup otel-desktop-viewer \
-    --host 0.0.0.0 \
+    --host 127.0.0.1 \
     --browser-port "$UIPORT" \
     --open-browser=false \
     --db /var/lib/skill-observability/otel-desktop-viewer.duckdb \
@@ -209,39 +269,12 @@ case "$BACKEND" in
   *) log "unknown backend '$BACKEND'" ;;
 esac
 
-if [ "$INSTALLPLUGIN" = "true" ]; then
-  if command -v claude >/dev/null 2>&1; then
-    MARKETPLACE_MARKER="$HOME/.claude/.skill-observability-marketplace-added"
-    PLUGIN_MARKER="$HOME/.claude/.skill-observability-plugin-installed"
-    mkdir -p "$HOME/.claude" 2>/dev/null || true
-    if [ ! -f "$MARKETPLACE_MARKER" ]; then
-      log "adding borahdev/agent-skills marketplace (registers as 'borahdev')"
-      if claude plugin marketplace add https://github.com/borahdev/agent-skills.git >> "$LOG_DIR/plugin-install.log" 2>&1; then
-        touch "$MARKETPLACE_MARKER" 2>/dev/null || true
-      else
-        log "marketplace add failed (see $LOG_DIR/plugin-install.log); will retry next start"
-      fi
-    fi
-    if [ -f "$MARKETPLACE_MARKER" ] && [ ! -f "$PLUGIN_MARKER" ]; then
-      log "installing agent-skills plugin (user scope, default)"
-      if claude plugin install agent-skills@borahdev >> "$LOG_DIR/plugin-install.log" 2>&1; then
-        touch "$PLUGIN_MARKER" 2>/dev/null || true
-      else
-        log "plugin install failed (see $LOG_DIR/plugin-install.log); will retry next start"
-      fi
-    fi
-  else
-    log "installPlugin=true but 'claude' CLI not on PATH yet; skipping (will retry next start)"
-  fi
-fi
-
 log "skill-observability start.sh done"
 exit 0
 STARTSCRIPT
 
 sed -i "s|__BACKEND__|${BACKEND}|" "$SHARE_DIR/start.sh"
 sed -i "s|__UIPORT__|${UIPORT}|" "$SHARE_DIR/start.sh"
-sed -i "s|__INSTALLPLUGIN__|${INSTALLPLUGIN}|" "$SHARE_DIR/start.sh"
 chmod 0755 "$SHARE_DIR/start.sh"
 
 # Convenience wrapper to attach to the otel-tui TUI from any shell.
@@ -286,11 +319,13 @@ fi
 ENV_FILE="/etc/profile.d/skill-observability-otel.sh"
 {
   echo "# Generated by the skill-observability dev container feature. Do not edit by hand."
-  echo "export OTEL_EXPORTER_OTLP_ENDPOINT=\"${RESOLVED_ENDPOINT}\""
-  echo "export OTEL_SERVICE_NAME=\"agent-skills\""
+  # %q shell-quotes the value (handles quotes/backticks/$/spaces safely) so an
+  # adversarial option value can't break out of the export statement.
+  printf 'export OTEL_EXPORTER_OTLP_ENDPOINT=%q\n' "$RESOLVED_ENDPOINT"
+  echo "export OTEL_SERVICE_NAME=\"skill-observability\""
   echo "export OTEL_RESOURCE_ATTRIBUTES=\"deployment.environment=devcontainer\""
   if [ -n "$ENDPOINTHEADERS" ]; then
-    echo "export OTEL_EXPORTER_OTLP_HEADERS=\"${ENDPOINTHEADERS}\""
+    printf 'export OTEL_EXPORTER_OTLP_HEADERS=%q\n' "$ENDPOINTHEADERS"
   fi
   if [ "$CLAUDETELEMETRY" = "true" ]; then
     echo "export CLAUDE_CODE_ENABLE_TELEMETRY=1"
@@ -311,14 +346,28 @@ chmod 0644 "$ENV_FILE"
 
 # Also append to /etc/environment (KEY=VALUE, no `export`, no expansion) for
 # non-login-shell inheritance. Guard against duplicate entries on rebuild.
+# ENDPOINT/ENDPOINTHEADERS were already checked above to reject newlines, so
+# neither value can inject extra lines into this file.
+# One key list drives the dedup below, so it can't drift from the echoes
+# that follow it.
+OTEL_ENV_KEYS=(
+  OTEL_EXPORTER_OTLP_ENDPOINT OTEL_SERVICE_NAME OTEL_RESOURCE_ATTRIBUTES
+  OTEL_EXPORTER_OTLP_HEADERS CLAUDE_CODE_ENABLE_TELEMETRY OTEL_METRICS_EXPORTER
+  OTEL_LOGS_EXPORTER OTEL_EXPORTER_OTLP_PROTOCOL CLAUDE_CODE_ENHANCED_TELEMETRY_BETA
+  OTEL_TRACES_EXPORTER OTEL_LOG_USER_PROMPTS OTEL_LOG_TOOL_DETAILS
+)
 {
+  dedup_expr=""
+  for key in "${OTEL_ENV_KEYS[@]}"; do
+    dedup_expr="${dedup_expr}/^${key}=/d;"
+  done
   grep -q '^OTEL_EXPORTER_OTLP_ENDPOINT=' /etc/environment 2>/dev/null && \
-    sed -i '/^OTEL_EXPORTER_OTLP_ENDPOINT=/d;/^OTEL_SERVICE_NAME=/d;/^OTEL_RESOURCE_ATTRIBUTES=/d;/^OTEL_EXPORTER_OTLP_HEADERS=/d;/^CLAUDE_CODE_ENABLE_TELEMETRY=/d;/^OTEL_METRICS_EXPORTER=/d;/^OTEL_LOGS_EXPORTER=/d;/^OTEL_EXPORTER_OTLP_PROTOCOL=/d;/^CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=/d;/^OTEL_TRACES_EXPORTER=/d;/^OTEL_LOG_USER_PROMPTS=/d;/^OTEL_LOG_TOOL_DETAILS=/d' /etc/environment
+    sed -i "$dedup_expr" /etc/environment
   true
 }
 {
   echo "OTEL_EXPORTER_OTLP_ENDPOINT=${RESOLVED_ENDPOINT}"
-  echo "OTEL_SERVICE_NAME=agent-skills"
+  echo "OTEL_SERVICE_NAME=skill-observability"
   echo "OTEL_RESOURCE_ATTRIBUTES=deployment.environment=devcontainer"
   [ -n "$ENDPOINTHEADERS" ] && echo "OTEL_EXPORTER_OTLP_HEADERS=${ENDPOINTHEADERS}"
   if [ "$CLAUDETELEMETRY" = "true" ]; then
