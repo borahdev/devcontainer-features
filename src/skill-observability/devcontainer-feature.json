@@ -1,6 +1,6 @@
 {
   "id": "skill-observability",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "name": "Skill Observability",
   "description": "Zero-effort local OpenTelemetry viewing for Claude Code plugin/skill runs and Claude Code's own telemetry. Starts a lightweight in-container OTLP receiver+viewer, wires OTEL_* env vars so both Claude Code and the agent-skills plugin hooks export to it, and can optionally install the agent-skills plugin non-interactively.",
   "documentationURL": "https://github.com/borahdev/devcontainer-features/tree/main/src/skill-observability",
