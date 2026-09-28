@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
+
+# Pinned playwright version for the cli=false path (npx), kept in sync with
+# the @playwright/cli default below when practical. Update both together.
+PLAYWRIGHT_VERSION="1.63.0"
 
 BROWSER="${BROWSER:-auto}"
 CLI="${CLI:-true}"
-CLIVERSION="${CLIVERSION:-latest}"
+CLIVERSION="${CLIVERSION:-0.1.21}"
 _REMOTE_USER="${_REMOTE_USER:-node}"
 
 if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
@@ -51,7 +55,7 @@ fi
 # - playwright-cli defaults to the 'chrome' channel; on arm64 (or browser=chromium
 #   explicitly) that default is wrong, so point it at chromium instead.
 if [ "${CLI}" = "true" ] && [ "${BROWSER}" != "none" ]; then
-    remote_home="$(getent passwd "${_REMOTE_USER}" | cut -d: -f6)"
+    remote_home="$(getent passwd "${_REMOTE_USER}" | cut -d: -f6 || true)"
     remote_home="${remote_home:-/home/${_REMOTE_USER}}"
     mkdir -p "${remote_home}/.playwright"
     if [ "${BROWSER}" = "chromium" ]; then
@@ -85,8 +89,8 @@ case "${BROWSER}" in
         ;;
     chrome)
         if [ -z "${PW_BIN}" ]; then
-            npx -y playwright@latest install-deps chrome
-            npx -y playwright@latest install chrome
+            npx -y "playwright@${PLAYWRIGHT_VERSION}" install-deps chrome
+            npx -y "playwright@${PLAYWRIGHT_VERSION}" install chrome
         else
             ${PW_BIN} install-deps chrome
             ${PW_BIN} install chrome
@@ -94,8 +98,8 @@ case "${BROWSER}" in
         ;;
     chromium)
         if [ -z "${PW_BIN}" ]; then
-            npx -y playwright@latest install-deps chromium
-            PLAYWRIGHT_BROWSERS_PATH=/ms-playwright npx -y playwright@latest install chromium
+            npx -y "playwright@${PLAYWRIGHT_VERSION}" install-deps chromium
+            PLAYWRIGHT_BROWSERS_PATH=/ms-playwright npx -y "playwright@${PLAYWRIGHT_VERSION}" install chromium
         else
             ${PW_BIN} install-deps chromium
             PLAYWRIGHT_BROWSERS_PATH=/ms-playwright ${PW_BIN} install chromium

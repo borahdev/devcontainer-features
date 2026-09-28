@@ -1,6 +1,6 @@
 {
   "id": "playwright",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "name": "Playwright",
   "description": "Playwright CLI and a matching browser for agent-driven and project test-suite browser checks.",
   "documentationURL": "https://github.com/borahdev/devcontainer-features/tree/main/src/playwright",
@@ -29,8 +29,8 @@
     },
     "cliVersion": {
       "type": "string",
-      "default": "latest",
-      "description": "Version of @playwright/cli to install."
+      "default": "0.1.21",
+      "description": "Version of @playwright/cli to install. Pinned to a known-good release rather than 'latest' for reproducible builds; bump deliberately."
     }
   }
 }

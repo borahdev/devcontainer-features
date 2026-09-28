@@ -12,7 +12,7 @@ Browser checks for a coding agent (Claude Code): `@playwright/cli` for live, age
 |---|---|---|
 | `browser` | `auto` | `chrome` on x64, `chromium` on arm64 (Playwright can't install Chrome there); `none` skips browser install |
 | `cli` | `true` | installs `@playwright/cli` (`playwright-cli` on PATH) |
-| `cliVersion` | `latest` | `@playwright/cli` version |
+| `cliVersion` | `0.1.21` | `@playwright/cli` version (pinned, not `latest`, for reproducible builds) |
 
 **Which tool when**
 - **CLI** (`playwright-cli`) — the agent's live checks: low context, writes snapshots/screenshots to `.playwright-cli/` in cwd.
