@@ -155,9 +155,15 @@ BACKEND="__BACKEND__"
 UIPORT="__UIPORT__"
 INSTALLPLUGIN="__INSTALLPLUGIN__"
 LOG_DIR="/var/log/skill-observability"
-mkdir -p "$LOG_DIR"
+mkdir -p "$LOG_DIR" 2>/dev/null || true
+# The remote user's UID can be remapped after build (updateRemoteUserUID), so
+# the build-time owner may not be us. Fall back to a per-user dir; never fail.
+if [ ! -w "$LOG_DIR" ]; then
+  LOG_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/skill-observability"
+  mkdir -p "$LOG_DIR" 2>/dev/null || LOG_DIR=/tmp
+fi
 
-log() { echo "[skill-observability $(date -u +%FT%TZ)] $*" | tee -a "$LOG_DIR/start.log" >&2; }
+log() { echo "[skill-observability $(date -u +%FT%TZ)] $*" >&2; echo "[skill-observability $(date -u +%FT%TZ)] $*" >> "$LOG_DIR/start.log" 2>/dev/null || true; }
 
 start_otel_tui() {
   command -v otel-tui >/dev/null 2>&1 || { log "otel-tui binary not installed, skipping"; return; }
@@ -230,6 +236,7 @@ if [ "$INSTALLPLUGIN" = "true" ]; then
 fi
 
 log "skill-observability start.sh done"
+exit 0
 STARTSCRIPT
 
 sed -i "s|__BACKEND__|${BACKEND}|" "$SHARE_DIR/start.sh"
@@ -334,6 +341,8 @@ log_owner_chown() {
   if [ "$_REMOTE_USER" != "root" ] && id "$_REMOTE_USER" >/dev/null 2>&1; then
     chown -R "$_REMOTE_USER" "$LOG_DIR" "$STATE_DIR" 2>/dev/null || true
   fi
+  # Sticky + world-writable (like /tmp) so a post-build UID remap still works.
+  chmod 1777 "$LOG_DIR" "$STATE_DIR" 2>/dev/null || true
 }
 log_owner_chown
 
