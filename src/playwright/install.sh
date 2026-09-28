@@ -108,6 +108,10 @@ case "${BROWSER}" in
         ;;
 esac
 
+# The remote user's UID can be remapped after build (updateRemoteUserUID), which
+# orphans the chown above. Keep the browsers dir writable for whoever it becomes.
+chmod -R a+rwX /ms-playwright
+
 rm -rf /var/lib/apt/lists/*
 
 echo "Done installing playwright feature."
