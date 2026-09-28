@@ -115,9 +115,9 @@ esac
 #    checksums below are pinned deliberately (not "latest"): a moving target
 #    can't be checksummed, and an unverified binary run as root at build time
 #    is a supply-chain risk. Update both the tag and the checksums together
-#    when bumping a version (checksums come from each release's own
-#    checksums.txt asset, cross-checked here by downloading and hashing the
-#    assets ourselves - see PR/commit notes).
+#    when bumping a version. Checksums come from each release's own
+#    checksums.txt asset; at authoring time they were also cross-checked by
+#    downloading both arches' assets and hashing them independently.
 # ---------------------------------------------------------------------------
 OTEL_TUI_VERSION="v0.7.5"
 declare -A OTEL_TUI_SHA256=(
@@ -249,13 +249,14 @@ start_otel_desktop_viewer() {
   fi
   log "starting otel-desktop-viewer (UI on :$UIPORT, OTLP HTTP on :4318)"
   mkdir -p /var/lib/skill-observability 2>/dev/null || true
-  # --host 127.0.0.1: VS Code / the devcontainers CLI forward ports by
-  # attaching to the container's network namespace directly (not by proxying
-  # through an external interface), so a loopback-only listener is already
-  # reachable for port-forwarding; no need to expose it on all interfaces.
-  # --open-browser=false because there is no browser inside the container;
-  # --db persists traces/logs/metrics across restarts in the feature's named
-  # volume instead of the default in-memory store.
+  # --host 127.0.0.1 (the binary's own default is "localhost"; we were
+  # overriding it to 0.0.0.0 unnecessarily): VS Code's port-forwarding runs a
+  # helper process inside the container's own network namespace and relays
+  # from there, so a loopback-only listener is already reachable for
+  # forwarding - no need to expose it on all interfaces. --open-browser=false
+  # because there is no browser inside the container; --db persists
+  # traces/logs/metrics across restarts in the feature's named volume instead
+  # of the default in-memory store.
   nohup otel-desktop-viewer \
     --host 127.0.0.1 \
     --browser-port "$UIPORT" \

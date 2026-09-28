@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Pinned playwright version for the cli=false path (npx), kept in sync with
-# the @playwright/cli default below when practical. Update both together.
+# Pinned playwright version for the cli=false path (npx). Not coupled to
+# CLIVERSION below: @playwright/cli bundles its own (prerelease) playwright
+# internally, so the two version numbers are independent of each other.
 PLAYWRIGHT_VERSION="1.63.0"
 
 BROWSER="${BROWSER:-auto}"
