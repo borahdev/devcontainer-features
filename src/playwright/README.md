@@ -17,7 +17,7 @@ Playwright CLI and a matching browser for agent-driven and project test-suite br
 |-----|-----|-----|-----|
 | browser | Browser to install: 'auto' picks chrome on x64 and chromium on arm64 (Chrome has no arm64 Linux build). 'none' skips browser install. | string | auto |
 | cli | Install @playwright/cli globally so agents can run playwright-cli. | boolean | true |
-| cliVersion | Version of @playwright/cli to install. | string | latest |
+| cliVersion | Version of @playwright/cli to install. Pinned to a known-good release rather than 'latest' for reproducible builds; bump deliberately. | string | 0.1.21 |
 
 Browser checks for a coding agent (Claude Code): `@playwright/cli` for live, agent-driven checks, plus a matching browser your project's own `@playwright/test` can reuse.
 
@@ -33,7 +33,7 @@ Browser checks for a coding agent (Claude Code): `@playwright/cli` for live, age
 |---|---|---|
 | `browser` | `auto` | `chrome` on x64, `chromium` on arm64 (Playwright can't install Chrome there); `none` skips browser install |
 | `cli` | `true` | installs `@playwright/cli` (`playwright-cli` on PATH) |
-| `cliVersion` | `latest` | `@playwright/cli` version |
+| `cliVersion` | `0.1.21` | `@playwright/cli` version (pinned, not `latest`, for reproducible builds) |
 
 **Which tool when**
 - **CLI** (`playwright-cli`) — the agent's live checks: low context, writes snapshots/screenshots to `.playwright-cli/` in cwd.
