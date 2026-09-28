@@ -52,7 +52,11 @@
     "SKILL_OBSERVABILITY_LOG_DIR": "/var/log/skill-observability"
   },
   "mounts": [
-    "source=skill-observability-data-${devcontainerId},target=/var/lib/skill-observability,type=volume"
+    {
+      "source": "skill-observability-data-${devcontainerId}",
+      "target": "/var/lib/skill-observability",
+      "type": "volume"
+    }
   ],
   "postStartCommand": "/usr/local/share/skill-observability/start.sh",
   "customizations": {
