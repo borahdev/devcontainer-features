@@ -2,9 +2,8 @@
 # Dev Container Feature: skill-observability
 # Runs at image build time (as root) via the devcontainers CLI.
 # Installs a local OTLP receiver/viewer and wires OTEL_* env vars so that
-# both Claude Code's own telemetry and the agent-skills plugin's hook spans
-# (see src/telemetry/otel.ts in borahdev/agent-skills) land in one place
-# with zero effort from the developer.
+# Claude Code's own telemetry (and any plugin/skill hook spans it or your
+# project emits) lands in one place with zero effort from the developer.
 set -euo pipefail
 
 # --- Feature options are exposed as upper-cased env vars by the devcontainers CLI ---
@@ -12,7 +11,6 @@ BACKEND="${BACKEND:-otel-tui}"
 ENDPOINT="${ENDPOINT:-}"
 ENDPOINTHEADERS="${ENDPOINTHEADERS:-}"
 UIPORT="${UIPORT:-4319}"
-INSTALLPLUGIN="${INSTALLPLUGIN:-true}"
 CLAUDETELEMETRY="${CLAUDETELEMETRY:-true}"
 CLAUDETRACES="${CLAUDETRACES:-false}"
 LOGPROMPTS="${LOGPROMPTS:-false}"
@@ -73,7 +71,7 @@ if ! [[ "$UIPORT" =~ ^[0-9]{1,5}$ ]]; then
   exit 1
 fi
 
-echo "[skill-observability] backend=$BACKEND endpoint='${ENDPOINT}' uiPort=$UIPORT installPlugin=$INSTALLPLUGIN claudeTelemetry=$CLAUDETELEMETRY claudeTraces=$CLAUDETRACES logPrompts=$LOGPROMPTS endpointHeaders=$([ -n "$ENDPOINTHEADERS" ] && echo '<set>' || echo '<unset>')"
+echo "[skill-observability] backend=$BACKEND endpoint='${ENDPOINT}' uiPort=$UIPORT claudeTelemetry=$CLAUDETELEMETRY claudeTraces=$CLAUDETRACES logPrompts=$LOGPROMPTS endpointHeaders=$([ -n "$ENDPOINTHEADERS" ] && echo '<set>' || echo '<unset>')"
 
 # ---------------------------------------------------------------------------
 # 1. Base build tools (curl/tar/ca-certificates are needed to fetch binaries;
@@ -208,13 +206,12 @@ fi
 # ---------------------------------------------------------------------------
 cat > "$SHARE_DIR/start.sh" <<'STARTSCRIPT'
 #!/usr/bin/env bash
-# Idempotently (re)starts the local OTLP backend and, if requested, installs
-# the agent-skills plugin. Safe to run on every container start.
+# Idempotently (re)starts the local OTLP backend. Safe to run on every
+# container start.
 set -uo pipefail
 
 BACKEND="__BACKEND__"
 UIPORT="__UIPORT__"
-INSTALLPLUGIN="__INSTALLPLUGIN__"
 LOG_DIR="/var/log/skill-observability"
 mkdir -p "$LOG_DIR" 2>/dev/null || true
 # The remote user's UID can be remapped after build (updateRemoteUserUID), so
@@ -273,39 +270,12 @@ case "$BACKEND" in
   *) log "unknown backend '$BACKEND'" ;;
 esac
 
-if [ "$INSTALLPLUGIN" = "true" ]; then
-  if command -v claude >/dev/null 2>&1; then
-    MARKETPLACE_MARKER="$HOME/.claude/.skill-observability-marketplace-added"
-    PLUGIN_MARKER="$HOME/.claude/.skill-observability-plugin-installed"
-    mkdir -p "$HOME/.claude" 2>/dev/null || true
-    if [ ! -f "$MARKETPLACE_MARKER" ]; then
-      log "adding borahdev/agent-skills marketplace (registers as 'borahdev')"
-      if claude plugin marketplace add https://github.com/borahdev/agent-skills.git >> "$LOG_DIR/plugin-install.log" 2>&1; then
-        touch "$MARKETPLACE_MARKER" 2>/dev/null || true
-      else
-        log "marketplace add failed (see $LOG_DIR/plugin-install.log); will retry next start"
-      fi
-    fi
-    if [ -f "$MARKETPLACE_MARKER" ] && [ ! -f "$PLUGIN_MARKER" ]; then
-      log "installing agent-skills plugin (user scope, default)"
-      if claude plugin install agent-skills@borahdev >> "$LOG_DIR/plugin-install.log" 2>&1; then
-        touch "$PLUGIN_MARKER" 2>/dev/null || true
-      else
-        log "plugin install failed (see $LOG_DIR/plugin-install.log); will retry next start"
-      fi
-    fi
-  else
-    log "installPlugin=true but 'claude' CLI not on PATH yet; skipping (will retry next start)"
-  fi
-fi
-
 log "skill-observability start.sh done"
 exit 0
 STARTSCRIPT
 
 sed -i "s|__BACKEND__|${BACKEND}|" "$SHARE_DIR/start.sh"
 sed -i "s|__UIPORT__|${UIPORT}|" "$SHARE_DIR/start.sh"
-sed -i "s|__INSTALLPLUGIN__|${INSTALLPLUGIN}|" "$SHARE_DIR/start.sh"
 chmod 0755 "$SHARE_DIR/start.sh"
 
 # Convenience wrapper to attach to the otel-tui TUI from any shell.
@@ -353,7 +323,7 @@ ENV_FILE="/etc/profile.d/skill-observability-otel.sh"
   # %q shell-quotes the value (handles quotes/backticks/$/spaces safely) so an
   # adversarial option value can't break out of the export statement.
   printf 'export OTEL_EXPORTER_OTLP_ENDPOINT=%q\n' "$RESOLVED_ENDPOINT"
-  echo "export OTEL_SERVICE_NAME=\"agent-skills\""
+  echo "export OTEL_SERVICE_NAME=\"skill-observability\""
   echo "export OTEL_RESOURCE_ATTRIBUTES=\"deployment.environment=devcontainer\""
   if [ -n "$ENDPOINTHEADERS" ]; then
     printf 'export OTEL_EXPORTER_OTLP_HEADERS=%q\n' "$ENDPOINTHEADERS"
@@ -386,7 +356,7 @@ chmod 0644 "$ENV_FILE"
 }
 {
   echo "OTEL_EXPORTER_OTLP_ENDPOINT=${RESOLVED_ENDPOINT}"
-  echo "OTEL_SERVICE_NAME=agent-skills"
+  echo "OTEL_SERVICE_NAME=skill-observability"
   echo "OTEL_RESOURCE_ATTRIBUTES=deployment.environment=devcontainer"
   [ -n "$ENDPOINTHEADERS" ] && echo "OTEL_EXPORTER_OTLP_HEADERS=${ENDPOINTHEADERS}"
   if [ "$CLAUDETELEMETRY" = "true" ]; then

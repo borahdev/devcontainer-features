@@ -1,8 +1,8 @@
 {
   "id": "skill-observability",
-  "version": "1.1.0",
+  "version": "2.0.0",
   "name": "Skill Observability",
-  "description": "Zero-effort local OpenTelemetry viewing for Claude Code plugin/skill runs and Claude Code's own telemetry. Starts a lightweight in-container OTLP receiver+viewer, wires OTEL_* env vars so both Claude Code and the agent-skills plugin hooks export to it, and can optionally install the agent-skills plugin non-interactively.",
+  "description": "Zero-effort local OpenTelemetry viewing for Claude Code plugin/skill runs and Claude Code's own telemetry. Starts a lightweight in-container OTLP receiver+viewer and wires OTEL_* env vars so Claude Code's telemetry (and any plugin/skill hook spans it or your project emits) export to it.",
   "documentationURL": "https://github.com/borahdev/devcontainer-features/tree/main/src/skill-observability",
   "options": {
     "backend": {
@@ -26,25 +26,20 @@
       "default": "4319",
       "description": "Port for the local backend's web UI (only used by otel-desktop-viewer). The OTLP HTTP receiver itself always listens on 4318."
     },
-    "installPlugin": {
-      "type": "boolean",
-      "default": true,
-      "description": "Non-interactively add the borahdev/agent-skills marketplace and install the agent-skills plugin (id 'agent-skills' in marketplace 'borahdev') at user scope via the claude CLI, if 'claude' is present on PATH at container-start time."
-    },
     "claudeTelemetry": {
       "type": "boolean",
       "default": true,
-      "description": "Set CLAUDE_CODE_ENABLE_TELEMETRY=1 plus OTEL_METRICS_EXPORTER=otlp and OTEL_LOGS_EXPORTER=otlp so Claude Code's own metrics and events flow to the same backend as the plugin's hook spans."
+      "description": "Set CLAUDE_CODE_ENABLE_TELEMETRY=1 plus OTEL_METRICS_EXPORTER=otlp and OTEL_LOGS_EXPORTER=otlp so Claude Code's own metrics and events flow to the local backend."
     },
     "claudeTraces": {
       "type": "boolean",
       "default": false,
-      "description": "Also enable Claude Code's beta trace export (CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1, OTEL_TRACES_EXPORTER=otlp). Off by default because it is a beta signal separate from the plugin's own hook.* spans."
+      "description": "Also enable Claude Code's beta trace export (CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1, OTEL_TRACES_EXPORTER=otlp). Off by default because it is a separate beta signal from Claude Code's default metrics/logs."
     },
     "logPrompts": {
       "type": "boolean",
       "default": false,
-      "description": "Set OTEL_LOG_USER_PROMPTS=1 (and OTEL_LOG_TOOL_DETAILS=1) so Claude Code's own OTel events include prompt text and tool parameters. Off by default for privacy; the plugin's own hook spans never include prompt content regardless of this setting."
+      "description": "Set OTEL_LOG_USER_PROMPTS=1 (and OTEL_LOG_TOOL_DETAILS=1) so Claude Code's own OTel events include prompt text and tool parameters. Off by default for privacy."
     }
   },
   "containerEnv": {
@@ -71,9 +66,5 @@
         }
       }
     }
-  },
-  "installsAfter": [
-    "ghcr.io/anthropics/devcontainer-features/claude-code",
-    "ghcr.io/devcontainers/features/node"
-  ]
+  }
 }

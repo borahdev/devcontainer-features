@@ -20,8 +20,7 @@
       "skill-observability": {
         "backend": "none",
         "endpoint": "https://otlp.example.com",
-        "endpointHeaders": "x-api-key=dummy-test-key",
-        "installPlugin": false
+        "endpointHeaders": "x-api-key=dummy-test-key"
       }
     }
   },
@@ -31,15 +30,6 @@
       "skill-observability": {
         "claudeTraces": true,
         "logPrompts": true
-      }
-    }
-  },
-  "with_claude_code_plugin_install_attempt": {
-    "image": "mcr.microsoft.com/devcontainers/base:bookworm",
-    "features": {
-      "ghcr.io/anthropics/devcontainer-features/claude-code:1": {},
-      "skill-observability": {
-        "installPlugin": true
       }
     }
   }
