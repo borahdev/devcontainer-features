@@ -23,18 +23,6 @@ D2 modern declarative diagramming language CLI and VS Code integration with bund
 
 - `terrastruct.d2`
 
-### VS Code Settings
-
-- `D2.execPath`: `d2`
-- `D2.previewLayout`: `tala`
-- `D2.previewTheme`: `default`
-- `D2.previewSketch`: `false`
-- `D2.autoUpdate`: `true`
-- `D2.updateTimer`: `800`
-- `D2.updateOnSave`: `false`
-- `files.associations`: `{ "*.d2": "d2" }`
-- `[d2]`: `{ "editor.formatOnSave": true, "editor.tabSize": 2, "editor.insertSpaces": true }`
-
 Declarative diagramming with D2: compiles `.d2` text files into SVG, PNG, and PDF diagrams, bundles layout engines (TALA, Dagre, ELK), and provides first-class VS Code integration.
 
 ## Guide
@@ -108,3 +96,8 @@ The feature defaults to TALA (Terrastruct’s AutoLayout Approach). If a project
   - VS Code preview follows `D2.previewLayout`, not the CLI environment alone.
 - **Base Image Compatibility**:
   - Official prebuilt binaries require glibc. Use Debian- or Ubuntu-style base images. Alpine/musl is unsupported.
+
+
+---
+
+_Note: This file was auto-generated from the [devcontainer-feature.json](https://github.com/borahdev/devcontainer-features/blob/main/src/d2/devcontainer-feature.json).  Add additional notes to a `NOTES.md`._
