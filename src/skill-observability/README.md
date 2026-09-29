@@ -1,13 +1,13 @@
 
 # Skill Observability (skill-observability)
 
-Zero-effort local OpenTelemetry viewing for Claude Code plugin/skill runs and Claude Code's own telemetry. Starts a lightweight in-container OTLP receiver+viewer, wires OTEL_* env vars so both Claude Code and the agent-skills plugin hooks export to it, and can optionally install the agent-skills plugin non-interactively.
+Zero-effort local OpenTelemetry viewing for Claude Code plugin/skill runs and Claude Code's own telemetry. Starts a lightweight in-container OTLP receiver+viewer and wires OTEL_* env vars so Claude Code's telemetry (and any plugin/skill hook spans it or your project emits) export to it.
 
 ## Example Usage
 
 ```json
 "features": {
-    "ghcr.io/borahdev/devcontainer-features/skill-observability:1": {}
+    "ghcr.io/borahdev/devcontainer-features/skill-observability:2": {}
 }
 ```
 
@@ -19,20 +19,18 @@ Zero-effort local OpenTelemetry viewing for Claude Code plugin/skill runs and Cl
 | endpoint | Remote OTLP/HTTP endpoint base URL (e.g. https://otlp-gateway.example.com). When set, this takes priority over the local backend: OTEL_EXPORTER_OTLP_ENDPOINT is set to this value and 'backend' is ignored for endpoint purposes (the local backend, if any, still starts and can be pointed at manually). Leave empty to use the local backend on 127.0.0.1. | string | - |
 | endpointHeaders | Value for OTEL_EXPORTER_OTLP_HEADERS when using a remote endpoint, e.g. 'Authorization=Bearer xxxx,x-honeycomb-team=xxxx'. Prefer passing this via remoteEnv/localEnv in devcontainer.json rather than baking it into the image; this option exists for convenience when the value is not a secret (e.g. a local collector). | string | - |
 | uiPort | Port for the local backend's web UI (only used by otel-desktop-viewer). The OTLP HTTP receiver itself always listens on 4318. | string | 4319 |
-| installPlugin | Non-interactively add the borahdev/agent-skills marketplace and install the agent-skills plugin (id 'agent-skills' in marketplace 'borahdev') at user scope via the claude CLI, if 'claude' is present on PATH at container-start time. | boolean | true |
-| claudeTelemetry | Set CLAUDE_CODE_ENABLE_TELEMETRY=1 plus OTEL_METRICS_EXPORTER=otlp and OTEL_LOGS_EXPORTER=otlp so Claude Code's own metrics and events flow to the same backend as the plugin's hook spans. | boolean | true |
-| claudeTraces | Also enable Claude Code's beta trace export (CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1, OTEL_TRACES_EXPORTER=otlp). Off by default because it is a beta signal separate from the plugin's own hook.* spans. | boolean | false |
-| logPrompts | Set OTEL_LOG_USER_PROMPTS=1 (and OTEL_LOG_TOOL_DETAILS=1) so Claude Code's own OTel events include prompt text and tool parameters. Off by default for privacy; the plugin's own hook spans never include prompt content regardless of this setting. | boolean | false |
+| claudeTelemetry | Set CLAUDE_CODE_ENABLE_TELEMETRY=1 plus OTEL_METRICS_EXPORTER=otlp and OTEL_LOGS_EXPORTER=otlp so Claude Code's own metrics and events flow to the local backend. | boolean | true |
+| claudeTraces | Also enable Claude Code's beta trace export (CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1, OTEL_TRACES_EXPORTER=otlp). Off by default because it is a separate beta signal from Claude Code's default metrics/logs. | boolean | false |
+| logPrompts | Set OTEL_LOG_USER_PROMPTS=1 (and OTEL_LOG_TOOL_DETAILS=1) so Claude Code's own OTel events include prompt text and tool parameters. Off by default for privacy. | boolean | false |
 
-Zero-effort local OpenTelemetry viewing for Claude Code inside a dev container: an in-container OTLP receiver + viewer, `OTEL_*` env vars wired for both Claude Code's own telemetry and the [`agent-skills`](https://github.com/borahdev/agent-skills) plugin's hook spans, and an optional non-interactive install of that plugin.
+Zero-effort local OpenTelemetry viewing for Claude Code inside a dev container: an in-container OTLP receiver + viewer, with `OTEL_*` env vars wired for Claude Code's own telemetry (and any plugin/skill hook spans your project emits, if it exports OTel the same way).
 
 ## Guide
 
 ```jsonc
 "features": {
-  "ghcr.io/devcontainers/features/node:1": {},
   "ghcr.io/anthropics/devcontainer-features/claude-code:1": {},
-  "ghcr.io/borahdev/devcontainer-features/skill-observability:1": {}
+  "ghcr.io/borahdev/devcontainer-features/skill-observability:2": {}
 }
 ```
 
@@ -42,18 +40,15 @@ Zero-effort local OpenTelemetry viewing for Claude Code inside a dev container: 
 | `endpoint` | `""` | Remote OTLP/HTTP base URL. When set, `OTEL_EXPORTER_OTLP_ENDPOINT` points here instead of `http://127.0.0.1:4318`. |
 | `endpointHeaders` | `""` | Value for `OTEL_EXPORTER_OTLP_HEADERS`, e.g. `Authorization=Bearer xxxx`. Prefer `remoteEnv`/`localEnv` (see below) when the value is a secret. |
 | `uiPort` | `"4319"` | `otel-desktop-viewer`'s web UI port (unused by `otel-tui`, a TUI). The OTLP HTTP receiver itself always listens on `4318`. |
-| `installPlugin` | `true` | Non-interactively `claude plugin marketplace add https://github.com/borahdev/agent-skills.git` (HTTPS, so no SSH host key or GitHub auth is needed) + `claude plugin install agent-skills@borahdev` once `claude` is on PATH. |
-| `claudeTelemetry` | `true` | Sets `CLAUDE_CODE_ENABLE_TELEMETRY=1`, `OTEL_METRICS_EXPORTER=otlp`, `OTEL_LOGS_EXPORTER=otlp` so Claude Code's own telemetry lands next to the plugin's spans. |
-| `claudeTraces` | `false` | Also enables Claude Code's beta trace export (`CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1`, `OTEL_TRACES_EXPORTER=otlp`) — a separate beta signal from the plugin's own `hook.*` spans. |
-| `logPrompts` | `false` | Includes prompt text and tool parameters in Claude Code's own OTel events (`OTEL_LOG_USER_PROMPTS=1`, `OTEL_LOG_TOOL_DETAILS=1`). The plugin's own hook spans (`hook.*`, `script.exec`, `policy.decision`, `skill.invoke`) never carry prompt or tool-argument content, regardless of this setting.
-
-`installsAfter` the Node.js and Claude Code features, so `claude` is already on `PATH` by container-start time — the plugin install itself still happens then (via `postStartCommand`), not at build time, since network access and a non-root `$HOME/.claude` are only reliably available once the container is running.
+| `claudeTelemetry` | `true` | Sets `CLAUDE_CODE_ENABLE_TELEMETRY=1`, `OTEL_METRICS_EXPORTER=otlp`, `OTEL_LOGS_EXPORTER=otlp` so Claude Code's own telemetry lands in the local backend. |
+| `claudeTraces` | `false` | Also enables Claude Code's beta trace export (`CLAUDE_CODE_ENHANCED_TELEMETRY_BETA=1`, `OTEL_TRACES_EXPORTER=otlp`) — a separate beta signal from Claude Code's default metrics/logs. |
+| `logPrompts` | `false` | Includes prompt text and tool parameters in Claude Code's own OTel events (`OTEL_LOG_USER_PROMPTS=1`, `OTEL_LOG_TOOL_DETAILS=1`). Off by default for privacy.
 
 **Viewing traces**
 - `otel-tui` (default): `otel-tui-attach` from any shell attaches to the backend's `tmux` session; detach with `Ctrl-b d` without stopping it.
 - `otel-desktop-viewer`: open `http://localhost:<uiPort>` (VS Code offers to forward the port automatically, or forward it manually).
 
-Logs for the backend and the plugin-install step: `/var/log/skill-observability/`.
+Logs for the backend: `/var/log/skill-observability/`.
 
 **Remote / other-machine mode** — set `backend: "none"` and `endpoint` to a reachable collector URL; pass any secret header via `remoteEnv` (resolved from the *local* environment, never baked into the image):
 
@@ -63,7 +58,7 @@ Logs for the backend and the plugin-install step: `/var/log/skill-observability/
     "OTEL_EXPORTER_OTLP_HEADERS": "${localEnv:OTEL_HEADERS_SECRET}"
   },
   "features": {
-    "ghcr.io/borahdev/devcontainer-features/skill-observability:1": {
+    "ghcr.io/borahdev/devcontainer-features/skill-observability:2": {
       "backend": "none",
       "endpoint": "https://otlp-gateway.example.com"
     }
@@ -84,8 +79,7 @@ Logs for the backend and the plugin-install step: `/var/log/skill-observability/
 ## Quirks
 
 - `otel-desktop-viewer`'s in-memory store is ephemeral by default; this feature passes `--db /var/lib/skill-observability/otel-desktop-viewer.duckdb` (backed by the feature's own named volume) so traces/logs/metrics persist across container restarts.
-- The plugin install (`installPlugin: true`) is retried on every container start via marker files (`$HOME/.claude/.skill-observability-marketplace-added`, `.skill-observability-plugin-installed`) until it succeeds — it never fails or blocks container start if `claude` isn't ready yet or the marketplace add fails (e.g. the source repo isn't reachable).
-- `logPrompts` only affects Claude Code's own OTel events; the plugin's own spans never include prompt or tool-argument content either way.
+- `logPrompts` only affects Claude Code's own OTel events.
 
 
 ---
