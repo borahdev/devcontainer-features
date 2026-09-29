@@ -14,6 +14,7 @@ Personal, reusable [Dev Container Features](https://containers.dev/implementors/
 |---|---|---|
 | Playwright | This repo's Feature: `ghcr.io/borahdev/devcontainer-features/playwright:1` | [src/playwright/NOTES.md](./src/playwright/NOTES.md) |
 | Skill observability (OTel viewer for Claude Code) | This repo's Feature: `ghcr.io/borahdev/devcontainer-features/skill-observability:2` | [src/skill-observability/NOTES.md](./src/skill-observability/NOTES.md) |
+| D2 | This repo's Feature: `ghcr.io/borahdev/devcontainer-features/d2:1` | [src/d2/NOTES.md](./src/d2/NOTES.md) |
 | pnpm | No Feature: the base image's pnpm switches to the version pinned in `devEngines` | [notes/pnpm.md](./notes/pnpm.md) |
 | Bun | Existing Feature: `ghcr.io/devcontainers-extra/features/bun:1` | [notes/bun.md](./notes/bun.md) |
 

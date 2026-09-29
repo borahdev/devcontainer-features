@@ -1,0 +1,45 @@
+{
+  "id": "d2",
+  "version": "1.0.0",
+  "name": "D2",
+  "description": "D2 modern declarative diagramming language CLI and VS Code integration with bundled TALA (Terrastruct's AutoLayout Approach), Dagre, and ELK layout engines (selectable at render time).",
+  "documentationURL": "https://github.com/borahdev/devcontainer-features/tree/main/src/d2",
+  "options": {
+    "version": {
+      "type": "string",
+      "proposals": [
+        "latest",
+        "v0.9.0"
+      ],
+      "default": "latest",
+      "description": "Version of D2 to install. Defaults to 'latest' or a specific release like 'v0.9.0'."
+    }
+  },
+  "containerEnv": {
+    "D2_LAYOUT": "tala"
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "terrastruct.d2"
+      ],
+      "settings": {
+        "D2.execPath": "d2",
+        "D2.previewLayout": "tala",
+        "D2.previewTheme": "default",
+        "D2.previewSketch": false,
+        "D2.autoUpdate": true,
+        "D2.updateTimer": 800,
+        "D2.updateOnSave": false,
+        "files.associations": {
+          "*.d2": "d2"
+        },
+        "[d2]": {
+          "editor.formatOnSave": true,
+          "editor.tabSize": 2,
+          "editor.insertSpaces": true
+        }
+      }
+    }
+  }
+}
